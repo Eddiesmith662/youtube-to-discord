@@ -99,7 +99,7 @@ def post_to_discord(webhook_url, video, keyword):
     }
 
     payload = {
-        "username": "VSPEED :clapper: Broadcast Link",
+        "username": "VSPEED 🎬 Broadcast Link",
         "embeds": [embed]
     }
 
