@@ -79,11 +79,10 @@ def post_to_discord(webhook_url, video, keyword):
         "url": video["link"],
         "color": 0x1E90FF,
         "image": {"url": video["thumbnail"]},
-        "footer": {"text": f"Tagged as {keyword}"},
     }
 
     payload = {
-        "username": "YouTube Auto Poster",
+        "username": "VSPEED Bot",
         "embeds": [embed]
     }
 
