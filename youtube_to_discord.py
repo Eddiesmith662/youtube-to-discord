@@ -26,11 +26,7 @@ WEBHOOK_MAP = {
 }
 
 POSTED_FILE_TEMPLATE = "posted_videos_{}.json"
-
-CHECK_INTERVAL = 600  # 10 minutes
-
-# Track last check timestamp
-last_checked = {channel_id: 0 for channel_id in CHANNELS}
+CHECK_INTERVAL = 3600   # 1 hour
 
 
 def load_posted_videos(channel_id):
@@ -56,8 +52,14 @@ def get_latest_videos(channel_id, max_results=5):
         f"&order=date"
         f"&maxResults={max_results}"
     )
-    response = requests.get(url)
-    return response.json().get("items", [])
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.json().get("items", [])
+    except Exception as e:
+        print(f"⚠️ Error fetching videos for {channel_id}: {e}")
+        return []
 
 
 def get_first_matching_keyword(title):
@@ -69,18 +71,10 @@ def get_first_matching_keyword(title):
 
 
 def main():
-    print("✅ YouTube → Discord service started with cooldown protection")
+    print("✅ YouTube → Discord service started (hourly check mode)")
 
     while True:
-        now = time.time()
-
         for channel_id in CHANNELS:
-            # Only check a channel if cooldown passed
-            if now - last_checked[channel_id] < CHECK_INTERVAL:
-                continue
-
-            last_checked[channel_id] = now
-
             print(f"\n⏳ Checking channel: {channel_id}")
             posted = load_posted_videos(channel_id)
 
@@ -97,20 +91,25 @@ def main():
                 if keyword:
                     link = f"https://www.youtube.com/watch?v={video_id}"
                     webhook = WEBHOOK_MAP[keyword]
+                    thumb = snippet["thumbnails"]["high"]["url"]
+
                     print(f"🎯 Match: {title} → {keyword}")
+
                     requests.post(webhook, json={
                         "username": "VSPEED 🎬 Broadcast Link",
                         "embeds": [{
                             "title": title,
                             "url": link,
                             "color": 0x1E90FF,
-                            "image": {"url": snippet["thumbnails"]["high"]["url"]}
+                            "image": {"url": thumb}
                         }]
                     })
+
                     posted.add(video_id)
                     save_posted_videos(channel_id, posted)
 
-        time.sleep(2)  # Very small sleep to prevent CPU spinning
+        print(f"😴 Sleeping for {CHECK_INTERVAL} seconds...")
+        time.sleep(CHECK_INTERVAL)
 
 
 if __name__ == "__main__":
