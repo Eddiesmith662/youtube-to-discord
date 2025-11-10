@@ -4,7 +4,11 @@ import json
 import os
 
 # === CONFIGURATION ===
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "AIzaSyBj-atBuxjkUNpecYX78sl5QAtabFMt3Sg")
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+
+if not YOUTUBE_API_KEY:
+    raise ValueError("Missing YOUTUBE_API_KEY environment variable!")
+
 
 CHANNELS = [
     "UCb9eK6mcBZmGPWl1UJ2wemA",
