@@ -4,17 +4,13 @@ import json
 import os
 
 # === CONFIGURATION ===
-
-# API Key
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "AIzaSyBj-atBuxjkUNpecYX78sl5QAtabFMt3Sg")
 
-# List of YouTube channel IDs
 CHANNELS = [
-    "UCb9eK6mcBZmGPWl1UJ2wemA",  # Channel 1
-    "UCme1x5ySvBB8lGYsHpR4b6Q",        # Add more channels here if needed
+    "UCb9eK6mcBZmGPWl1UJ2wemA",
+    "UCme1x5ySvBB8lGYsHpR4b6Q",
 ]
 
-# Mapping of keyword → Discord webhook URL
 WEBHOOK_MAP = {
     "GLOVE STATION": "https://discord.com/api/webhooks/1436874656224379033/_Nw5lGbnUD0xR8QmBxg5KrctPgKuIc1DU1fmVHcY-OXYloIbmDtC9LYeLTrje_IfSXim",
     "MK FIRE": "https://discord.com/api/webhooks/1436874897514303769/RD3TwnX2XJtOX-Qb20e6FDOdRhfBL8HPoqDMRF3rXyHQvyiqlE-brFhQJGYJrGBAW6UL",
@@ -22,16 +18,16 @@ WEBHOOK_MAP = {
     "SAVE22 TRUCK SERIES": "https://discord.com/api/webhooks/1436873764083339335/-nU5XnnjzqUYZYih-_vjI-RqWrkE9LIZ8R-XpBHbae-t1hp_zVqm6L84hfSDhgZhy6GA",
     "CRUSIN CLASSICS": "https://discord.com/api/webhooks/1436874235296481310/khkApEcAstt_dpjlNMH2RzP_-TZMCQOEXfi-mEkZ7UiC4EJbW9ynvmMjvzXPWkqWN_xE",
     "LINCOLN TECH": "https://discord.com/api/webhooks/1436874472908001350/6OOWvxqeXLVAPwpODvvzgvtZjjJ0WVQpb1J-svt0aiyEHa7o56ehu93jRbd481IaVjLf",
-
-    # ✅ New keyword added
     "GOAT TALK LIVE": "https://discord.com/api/webhooks/1437062385985650779/ORBmPYtKNvrwEa410L0LgF9QoE_gT-XoOJQ-kTuaEd4qxOefsofe1RfvqMCaj4Rpnupi"
 }
 
-# Separate file for each channel
 POSTED_FILE_TEMPLATE = "posted_videos_{}.json"
 
+CHECK_INTERVAL = 600  # 10 minutes
 
-# === HELPER FUNCTIONS ===
+# Track last check timestamp
+last_checked = {channel_id: 0 for channel_id in CHANNELS}
+
 
 def load_posted_videos(channel_id):
     filename = POSTED_FILE_TEMPLATE.format(channel_id)
@@ -48,7 +44,6 @@ def save_posted_videos(channel_id, posted):
 
 
 def get_latest_videos(channel_id, max_results=5):
-    """Fetch the latest videos from the YouTube channel."""
     url = (
         f"https://www.googleapis.com/youtube/v3/search"
         f"?key={YOUTUBE_API_KEY}"
@@ -58,30 +53,10 @@ def get_latest_videos(channel_id, max_results=5):
         f"&maxResults={max_results}"
     )
     response = requests.get(url)
-    data = response.json()
-
-    if "items" not in data:
-        print(f"⚠️ API error or no videos found for channel: {channel_id}")
-        return []
-
-    videos = []
-    for item in data["items"]:
-        if item["id"].get("videoId"):
-            video_id = item["id"]["videoId"]
-            title = item["snippet"]["title"]
-            link = f"https://www.youtube.com/watch?v={video_id}"
-            thumbnail = item["snippet"]["thumbnails"]["high"]["url"]
-            videos.append({
-                "id": video_id,
-                "title": title,
-                "link": link,
-                "thumbnail": thumbnail
-            })
-    return videos
+    return response.json().get("items", [])
 
 
 def get_first_matching_keyword(title):
-    """Return the first keyword found in the title, or None if no match."""
     title_upper = title.upper()
     for keyword in WEBHOOK_MAP:
         if keyword in title_upper:
@@ -89,52 +64,49 @@ def get_first_matching_keyword(title):
     return None
 
 
-def post_to_discord(webhook_url, video, keyword):
-    """Send an embedded message to a Discord webhook."""
-    embed = {
-        "title": video["title"],
-        "url": video["link"],
-        "color": 0x1E90FF,
-        "image": {"url": video["thumbnail"]},
-    }
-
-    payload = {
-        "username": "VSPEED 🎬 Broadcast Link",
-        "embeds": [embed]
-    }
-
-    response = requests.post(webhook_url, json=payload)
-    if response.status_code == 204:
-        print(f"✅ Posted '{video['title']}' ({keyword})")
-    else:
-        print(f"⚠️ Failed to post '{video['title']}' ({keyword}) - Status {response.status_code}")
-
-
-# === MAIN LOOP ===
-
 def main():
-    print("🚀 YouTube → Discord integration started (multi-channel mode)...")
+    print("✅ YouTube → Discord service started with cooldown protection")
 
     while True:
+        now = time.time()
+
         for channel_id in CHANNELS:
+            # Only check a channel if cooldown passed
+            if now - last_checked[channel_id] < CHECK_INTERVAL:
+                continue
 
-            print(f"\n🔍 Checking channel: {channel_id}")
-            posted_videos = load_posted_videos(channel_id)
+            last_checked[channel_id] = now
 
-            videos = get_latest_videos(channel_id)
+            print(f"\n⏳ Checking channel: {channel_id}")
+            posted = load_posted_videos(channel_id)
 
-            for video in videos:
-                if video["id"] in posted_videos:
+            items = get_latest_videos(channel_id)
+            for item in items:
+                video_id = item["id"].get("videoId")
+                if not video_id or video_id in posted:
                     continue
 
-                keyword = get_first_matching_keyword(video["title"])
-                if keyword:
-                    post_to_discord(WEBHOOK_MAP[keyword], video, keyword)
-                    posted_videos.add(video["id"])
-                    save_posted_videos(channel_id, posted_videos)
+                snippet = item["snippet"]
+                title = snippet["title"]
+                keyword = get_first_matching_keyword(title)
 
-        # ✅ Sleep after checking ALL channels once
-        time.sleep(600)  # check every 10 minutes
+                if keyword:
+                    link = f"https://www.youtube.com/watch?v={video_id}"
+                    webhook = WEBHOOK_MAP[keyword]
+                    print(f"🎯 Match: {title} → {keyword}")
+                    requests.post(webhook, json={
+                        "username": "VSPEED 🎬 Broadcast Link",
+                        "embeds": [{
+                            "title": title,
+                            "url": link,
+                            "color": 0x1E90FF,
+                            "image": {"url": snippet["thumbnails"]["high"]["url"]}
+                        }]
+                    })
+                    posted.add(video_id)
+                    save_posted_videos(channel_id, posted)
+
+        time.sleep(2)  # Very small sleep to prevent CPU spinning
 
 
 if __name__ == "__main__":
